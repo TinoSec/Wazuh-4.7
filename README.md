@@ -9,55 +9,117 @@ Some extra packages are needed for the installation
 sudo apt-get install apt-transport-https zip unzip lsb-release curl gnupg
 ```
 
-# Installing Elasticsearch
-Install the GPG key:
+# Installing GPG KEY
+Install the GPG key
 
 ```bash
-curl -s https://artifacts.elastic.co/GPG-KEY-elasticsearch | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/elasticsearch.gpg --import && chmod 644 /usr/share/keyrings/elasticsearch.gpg
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import && chmod 644 /usr/share/keyrings/wazuh.gpg
 ```
 Add the repository
 
 ```bash
-echo "deb [signed-by=/usr/share/keyrings/elasticsearch.gpg] https://artifacts.elastic.co/packages/7.x/apt stable main" | tee /etc/apt/sources.list.d/elastic-7.x.list
+echo "deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main" | tee -a /etc/apt/sources.list.d/wazuh.list
 ```
 Update the package information
 
 ```bash
 sudo apt update
 ```
-Install Elasticsearch
+Install Wazuh manager
 
 ```bash
-apt-get install elasticsearch=7.17.12
+apt-get -y install wazuh-manager=4.7.5-1
 ```
-Download config file for Elasticsearch
-
-*Change  ther network-host value with your server ip*
-(/etc/elasticsearch/elasticsearch.yml)
+Enable and start the Wazuh manager service.
 
 ```bash
-curl -so /etc/elasticsearch/elasticsearch.yml https://packages.wazuh.com/4.5/tpl/elastic-basic/elasticsearch_all_in_one.yml
+systemctl daemon-reload
+systemctl enable wazuh-manager
+systemctl start wazuh-manager
 ```
-Download configuration file for certificates creation
+Run the following command to verify the Wazuh manager status.
 
 ```bash
-curl -so /usr/share/elasticsearch/instances.yml https://packages.wazuh.com/4.5/tpl/elastic-basic/instances_aio.yml
+systemctl status wazuh-manager
 ```
- In the following steps, a file that contains a folder named after the instance defined here will be created. This folder will contain the certificates and the keys necessary to communicate with the Elasticsearch node using SSL.
- 
-  *Modify /usr/share/elasticsearch/instances.yml with the your server ip address!*
-
- The certificates can be created using the elasticsearch-certutil tool
+# Install Filebeat
+Install filebeat package
+```bash
+apt-get -y install filebeat
+```
+Download the preconfigured Filebeat configuration file.
 
 ```bash
-/usr/share/elasticsearch/bin/elasticsearch-certutil cert ca --pem --in instances.yml --keep-ca-key --out ~/certs.zip
+curl -so /etc/filebeat/filebeat.yml https://packages.wazuh.com/4.7/tpl/wazuh/filebeat/filebeat.yml
 ```
-Extract the generated /usr/share/elasticsearch/certs.zip file from the previous step.
+Edit the /etc/filebeat/filebeat.yml configuration file and replace the following value "hosts".
+Replace it with your Wazuh indexer address accordingly.
+
+###### ejemplo de filebeat.yml
+
+
+
+Create a Filebeat keystore to securely store authentication credentials.
 
 ```bash
-unzip ~/certs.zip -d ~/certs
+filebeat keystore create
 ```
-The next step is to create the directory /etc/elasticsearch/certs, and then copy the CA file, the certificate and the key there
+
+Add the default username and password admin:admin to the secrets keystore.
+
+```bash
+echo admin | filebeat keystore add username --stdin --force
+echo admin | filebeat keystore add password --stdin --force
+```
+
+Download the alerts template for the Wazuh indexer.
+
+```bash
+curl -so /etc/filebeat/wazuh-template.json https://raw.githubusercontent.com/wazuh/wazuh/v4.7.5/extensions/elasticsearch/7.x/wazuh-template.json
+chmod go+r /etc/filebeat/wazuh-template.json
+```
+Install the Wazuh module for Filebeat.
+
+```bash
+curl -s https://packages.wazuh.com/4.x/filebeat/wazuh-filebeat-0.3.tar.gz | tar -xvz -C /usr/share/filebeat/module
+```
+# Deploying certificates
+Note Make sure that a copy of the wazuh-certificates.tar file, created during the initial configuration step, is placed in your working directory.Note Make sure that a copy of the wazuh-certificates.tar file, created during the initial configuration step, is placed in your working directory.
+
+```bash
+NODE_NAME=node-1
+```
+Create folder for certificate, and uncompress certificates to created folder. 
+```bash
+mkdir /etc/filebeat/certs
+tar -xf ./wazuh-certificates.tar -C /etc/filebeat/certs/ ./$NODE_NAME.pem ./$NODE_NAME-key.pem ./root-ca.pem
+mv -n /etc/filebeat/certs/$NODE_NAME.pem /etc/filebeat/certs/filebeat.pem
+mv -n /etc/filebeat/certs/$NODE_NAME-key.pem /etc/filebeat/certs/filebeat-key.pem
+chmod 500 /etc/filebeat/certs
+chmod 400 /etc/filebeat/certs/*
+chown -R root:root /etc/filebeat/certs
+```
+# Starting the Filebeat service
+Enable and start the Filebeat service.
+
+```bash
+systemctl daemon-reload
+systemctl enable filebeat
+systemctl start filebeat
+```
+Run the following command to verify that Filebeat is successfully installed.
+
+```bash
+filebeat test output
+```
+Expand the output to see an example response.
+
+##############################################################################
+
+
+
+
+
 
 ```bash
 mkdir /etc/elasticsearch/certs/ca -p
